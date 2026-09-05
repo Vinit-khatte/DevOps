@@ -501,6 +501,210 @@ terraform version
 
 ---
 
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
+# --------------------------------------------------
+# AWS PROVIDER
+# --------------------------------------------------
+
+provider "aws" {
+  region = "ap-south-1"
+}
+
+# --------------------------------------------------
+# VPC
+# --------------------------------------------------
+
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "Terraform-VPC"
+  }
+}
+
+# --------------------------------------------------
+# INTERNET GATEWAY
+# --------------------------------------------------
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "Terraform-IGW"
+  }
+}
+
+# --------------------------------------------------
+# PUBLIC SUBNET
+# --------------------------------------------------
+
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "ap-south-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "Terraform-Public-Subnet"
+  }
+}
+
+# --------------------------------------------------
+# ROUTE TABLE
+# --------------------------------------------------
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "Terraform-Public-Route-Table"
+  }
+}
+
+# --------------------------------------------------
+# ROUTE TABLE ASSOCIATION
+# --------------------------------------------------
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+# --------------------------------------------------
+# SECURITY GROUP
+# --------------------------------------------------
+
+resource "aws_security_group" "ec2" {
+  name        = "terraform-ec2-sg"
+  description = "Security group for Terraform EC2"
+  vpc_id      = aws_vpc.main.id
+
+  # SSH
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTP
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # HTTPS
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "Terraform-EC2-SG"
+  }
+}
+
+# --------------------------------------------------
+# AMAZON LINUX 2023 AMI
+# --------------------------------------------------
+
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+# --------------------------------------------------
+# EC2 INSTANCE
+# --------------------------------------------------
+
+resource "aws_instance" "web" {
+  ami           = data.aws_ami.amazon_linux.id
+  instance_type = "t3.micro"
+
+  subnet_id                   = aws_subnet.public.id
+  vpc_security_group_ids      = [aws_security_group.ec2.id]
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_size = 8
+    volume_type = "gp3"
+  }
+
+  tags = {
+    Name = "Terraform-EC2"
+  }
+}
+
+# --------------------------------------------------
+# OUTPUTS
+# --------------------------------------------------
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+output "subnet_id" {
+  value = aws_subnet.public.id
+}
+
+output "security_group_id" {
+  value = aws_security_group.ec2.id
+}
+
+output "ec2_instance_id" {
+  value = aws_instance.web.id
+}
+
+output "ec2_public_ip" {
+  value = aws_instance.web.public_ip
+}
+
+output "ec2_public_dns" {
+  value = aws_instance.web.public_dns
+}
+
 # Author
 
 **Prepared by:** Vinit Khatte  
